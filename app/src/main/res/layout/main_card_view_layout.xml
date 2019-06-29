@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:layout_width="wrap_content"
+  android:layout_height="wrap_content"
+  android:layout_margin="8dp"
+  android:background="@drawable/card_background"
+  android:contextClickable="false"
+  android:elevation="50dp"
+  tools:targetApi="m">
+
+  <android.support.v7.widget.CardView
+    android:id="@+id/cv"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="4dp"
+    app:cardCornerRadius="10dp">
+
+    <RelativeLayout
+      android:layout_width="match_parent"
+      android:layout_height="match_parent">
+
+      <LinearLayout
+        android:id="@+id/linearLayout2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <TextView
+          android:id="@+id/qu_text"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:visibility="gone"/>
+        <CheckBox
+          android:id="@+id/checkBox_question"
+          android:layout_width="match_parent"
+          android:layout_height="match_parent"
+          android:button="@null"
+          android:drawableEnd="?android:attr/listChoiceIndicatorMultiple"
+          android:drawableRight="?android:attr/listChoiceIndicatorMultiple"
+          android:textSize="18sp"/>
+        <TextView
+          android:id="@+id/level_text_question"
+          android:textStyle="bold"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_weight="1"
+          android:layout_marginBottom="8dp"
+          android:layout_marginStart="4dp"
+          android:layout_marginLeft="4dp"
+          android:textAppearance="?android:attr/textAppearanceSmall"
+          android:typeface="serif"/>
+        <TextView
+          android:id="@+id/textView5"
+          android:layout_width="243dp"
+          android:layout_height="wrap_content"
+          android:layout_weight="1"
+          android:layout_marginStart="4dp"
+          android:layout_marginLeft="4dp"
+          android:padding="4dp"
+          android:gravity="start"
+          android:text="@string/info"
+          android:textAlignment="textStart"
+          android:textAppearance="?android:attr/textAppearanceSmall"
+          android:typeface="monospace"/>
+        <CheckBox
+          android:id="@+id/checkBox"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_weight="1"/>
+
+
+      </LinearLayout>
+
+
+    </RelativeLayout>
+  </android.support.v7.widget.CardView>
+
+</FrameLayout>

@@ -1,0 +1,50 @@
+<resources>
+  <string name="app_name">K-APP-TURE</string>
+  <string name="bus_stop_scanner">Bus Stop Scanner</string>
+  <string name="text_view">Can you see me</string>
+  <string name="crafting_the_core">Crafting the Core</string>
+  <string name="tpm_check">Kaizen</string>
+  <string name="_5s_check">5s Check</string>
+  <string name="bus_stop">Bus Stop</string>
+  <string name="something_went_wrong">Something went wrong !!!!!</string>
+  <string name="db_table_true">DROP TABLE IF EXISTS </string>
+
+
+  <string name="by_eaun_ballinger">By Eaun Ballinger</string>
+  <string name="theme">Theme</string>
+  <string name="description">Description</string>
+  <string name="title">Title</string>
+  <string name="busstop_text">QC Circle 2018</string>
+  <string name="my_name">K-APP-TURE</string>
+  <string name="todo">TODO</string>
+  <string name="click_if_true">Please select only if Correct :</string>
+  <string name="info">Info :</string>
+
+  <string name="txt_actions">Action</string>
+  <string name="txt_title">Title</string>
+  <string name="txt_message">Message</string>
+  <string name="main_title">Set Title</string>
+  <string name="no">NO</string>
+  <string name="yes">YES</string>
+  <string name="place_holder">Place Holder</string>
+  <string name="associate_name">Associate Name :</string>
+  <string name="days">Days</string>
+  <string name="blue">Blue</string>
+  <string name="yellow">Yellow</string>
+  <string name="red">Red</string>
+
+
+  <string name="picture">Picture</string>
+  <string name="description_info">Info</string>
+  <string name="request_permission">This sample needs camera permission.</string>
+  <string name="camera_error">This device doest support Camera2 API.</string>
+  <string name="intro_message">aa</string>
+  <string name="title_activity_email">Report Completed</string>
+  <string name="large_text">Place Holder</string>
+  <string name="action_settings">Settings</string>
+  <string name="action_about">About</string>
+  <string name="none_conformance">None conformance</string>
+  <string name="take_photo">Take Photo</string>
+  <string name="close_capture">close capture</string>
+  <string name="kaizenText">WIP: \n Kaizen activitys will be created here</string>
+</resources>

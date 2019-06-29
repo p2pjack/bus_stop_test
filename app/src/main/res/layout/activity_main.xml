@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<android.support.constraint.ConstraintLayout
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  tools:context="com.dmuk.rellik.busstop.activities.MainActivity">
+
+  <Button
+    android:id="@+id/button_bus_top"
+    style="@android:style/Widget.Material.Light.Button.Toggle"
+    android:textStyle="bold"
+    android:layout_width="135dp"
+    android:layout_height="74dp"
+    android:layout_marginTop="8dp"
+    android:layout_marginBottom="8dp"
+    android:layout_marginStart="8dp"
+    android:layout_marginEnd="8dp"
+    android:layout_marginLeft="8dp"
+    android:layout_marginRight="8dp"
+    android:background="@android:drawable/dialog_holo_light_frame"
+    android:elevation="10dp"
+    android:text="@string/bus_stop"
+    android:textColor="@android:color/black"
+    app:layout_constraintBottom_toBottomOf="parent"
+    app:layout_constraintEnd_toStartOf="@+id/button_5s_check"
+    app:layout_constraintHorizontal_bias="0.5"
+    app:layout_constraintStart_toStartOf="parent"
+    app:layout_constraintTop_toTopOf="parent"
+    tools:targetApi="lollipop"/>
+
+  <Button
+    android:id="@+id/button_5s_check"
+    style="@android:style/Widget.Material.Light.Button.Toggle"
+    android:textStyle="bold"
+    android:layout_width="135dp"
+    android:layout_height="74dp"
+    android:background="@android:drawable/dialog_holo_light_frame"
+    android:elevation="10dp"
+    android:text="@string/_5s_check"
+    android:textColor="@android:color/black"
+    app:layout_constraintBottom_toBottomOf="@+id/button_bus_top"
+    app:layout_constraintEnd_toStartOf="@+id/button_tpm_checks"
+    app:layout_constraintHorizontal_bias="0.5"
+    app:layout_constraintStart_toEndOf="@+id/button_bus_top"
+    app:layout_constraintTop_toTopOf="@+id/button_bus_top"
+    tools:targetApi="lollipop"/>
+
+  <Button
+    android:id="@+id/button_tpm_checks"
+    style="@android:style/Widget.Material.Light.Button.Toggle"
+    android:textStyle="bold"
+    android:layout_width="135dp"
+    android:layout_height="74dp"
+    android:layout_marginStart="8dp"
+    android:layout_marginEnd="8dp"
+    android:layout_marginLeft="8dp"
+    android:layout_marginRight="8dp"
+    android:background="@android:drawable/dialog_holo_light_frame"
+    android:elevation="10dp"
+    android:text="@string/tpm_check"
+    android:textColor="@android:color/black"
+    app:layout_constraintBottom_toBottomOf="@+id/button_5s_check"
+    app:layout_constraintEnd_toEndOf="parent"
+    app:layout_constraintHorizontal_bias="0.5"
+    app:layout_constraintStart_toEndOf="@+id/button_5s_check"
+    app:layout_constraintTop_toTopOf="@+id/button_5s_check"
+    tools:targetApi="lollipop"/>
+
+  <ImageView
+    android:id="@+id/imageView"
+    android:layout_width="403dp"
+    android:layout_height="111dp"
+    android:layout_marginTop="8dp"
+    android:layout_marginStart="8dp"
+    android:layout_marginEnd="8dp"
+    android:layout_marginLeft="8dp"
+    android:layout_marginRight="8dp"
+    android:src="@drawable/og_image1"
+    app:layout_constraintEnd_toEndOf="parent"
+    app:layout_constraintStart_toStartOf="parent"
+    app:layout_constraintTop_toTopOf="parent"/>
+</android.support.constraint.ConstraintLayout>

@@ -1,0 +1,12 @@
+Have the aisle way been cleaned and no rubbish under the roller beds ?          ,A-level     ,true
+Has shrink wrap and loose banding been removed from pallets on the roller beds ?,A-Level     ,true
+Have the pallet lids been removed from pallets on the roller beds ?             ,A-level     ,true
+Have all empty pallets and boxes been removed from the roller beds ?            ,A-level     ,true
+Are the items on the 5s shadow boards present ?                                 ,Aisle Ways  ,true
+Is there any mixed waste in the bins ?                                          ,Aisle ways  ,false
+Have the bins been emptied ?                                                    ,Aisle ways  ,true
+Are the Kanbans facing forward or to the left ?                                 ,B-level     ,true
+Pallets in the upper levels are the pallet ID's in the top right hand corner ?  ,C/D/E-Levels,true
+Pallets in the upper levels do they have lids on or been shrink wrapped ?       ,C/D/E-Levels,true
+Have the barriers been cleaned ?                                                ,Aisle ways  ,true
+Have the floor marking been cleaned ?                                           ,Aisle ways  ,true

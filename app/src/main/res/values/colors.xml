@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="colorPrimary">#fc0a02</color>
+  <color name="colorPrimaryDark">#4b0204</color>
+  <color name="colorAccent">#9a9496</color>
+
+
+  <color name="TextBoxBackground">#78af9b</color>
+  <color name="TextColourBlack">#000000</color>
+  <color name="TextColourWhite">#ffffff</color>
+  <color name="white">#ffffff</color>
+  <color name="bkg_card">#8C9EFF</color>
+
+  <!-- In res/values/colors.xml -->
+  <color name="dark_blue">#180065</color>
+  <color name="light_blue">#334ee9ff</color>
+  <color name="medium_green">#3d853e</color>
+  <color name="light_green">#3c2ae668</color>
+  <color name="control_background">#cc4285f4</color>
+
+
+
+</resources>
+
+
+
+
