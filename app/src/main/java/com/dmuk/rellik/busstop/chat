@@ -572,7 +572,7 @@ void drawDisplay() {
   bool showDrop = false;
   float dpC = (!isnan(tC) && !isnan(hum)) ? calcDewPoint(tC, hum) : NAN;
 
-  // --- Main content ---
+ // --- Main content ---
   display.setCursor(0, 35);
   if (displayMode == 0) {
     if (!isnan(tC)) {
@@ -589,4 +589,72 @@ void drawDisplay() {
     } else if (extraDisplayMode == 1) {
       if (!isnan(dpC) && !isnan(tC)) {
         float dpDisp = isCelsius ? dpC : (dpC * 9.0f / 5.0f + 32.0f);
-        snprintf(buf, sizeof(buf), "Dew Pt: %.1f %c", dpDisp, isCelsius ? 'C' : 'F
+        snprintf(buf, sizeof(buf), "Dew Pt: %.1f %c", dpDisp, isCelsius ? 'C' : 'F');
+        display.print(buf);
+        float tDispC = tC;
+        float tDisp  = isCelsius ? tDispC : (tDispC * 9.0f / 5.0f + 32.0f);
+        float diff   = isCelsius ? (tDispC - dpC) : (tDisp - dpDisp);
+        if (diff <= 2.0f) showDrop = true;
+      } else {
+        display.print(F("Dew Pt: N/A"));
+      }
+    } else if (extraDisplayMode == 2) {
+      if (!isnan(pressure_hPa)) { snprintf(buf, sizeof(buf), "Press: %.1f hPa", pressure_hPa); display.print(buf); }
+      else display.print(F("Press: N/A"));
+    } else {
+      if (!isnan(pressure_hPa)) {
+        float alt = calcAltitude(pressure_hPa, seaLevelPressure_hPa);
+        snprintf(buf, sizeof(buf), "Alt: %.1f m", alt);
+        display.print(buf);
+      } else {
+        display.print(F("Alt: N/A"));
+      }
+    }
+  }
+
+  // --- Footer / mode hint ---
+  display.setCursor(0, 50);
+  if (mode == NORMAL) {
+    if (displayMode == 0) display.print(F("Normal: Temp"));
+    else {
+      static const char humLbl[]  PROGMEM = "Hum";
+      static const char dewLbl[]  PROGMEM = "DewPt";
+      static const char prsLbl[]  PROGMEM = "Pressure";
+      static const char altLbl[]  PROGMEM = "Altitude";
+      const char* p = humLbl;
+      if (extraDisplayMode == 1) p = dewLbl;
+      else if (extraDisplayMode == 2) p = prsLbl;
+      else if (extraDisplayMode == 3) p = altLbl;
+      strncpy_P(buf, p, sizeof(buf)); buf[sizeof(buf)-1] = '\0';
+      display.print(buf);
+    }
+  } else {
+    switch (mode) {
+      case SET_HOUR:     display.print(F("Set Hour")); break;
+      case SET_MINUTE:   display.print(F("Set Minute")); break;
+      case SET_DAY:      display.print(F("Set Day")); break;
+      case SET_MONTH:    display.print(F("Set Month")); break;
+      case SET_YEAR:     display.print(F("Set Year")); break;
+      case SET_SEALEVEL: snprintf(buf, sizeof(buf), "Set SL: %.1f hPa", seaLevelPressure_hPa); display.print(buf); break;
+      case SET_ALT_CAL:  snprintf(buf, sizeof(buf), "Set Alt: %.1f m",  knownAltitude_m);     display.print(buf); break;
+      default: break;
+    }
+  }
+
+  // --- Condensation risk (blink droplet + inverted "RISK") ---
+  if (showDrop) {
+    static unsigned long lastBlink = 0;
+    static bool blinkOn = true;
+    if (millis() - lastBlink >= 500UL) { blinkOn = !blinkOn; lastBlink = millis(); }
+    if (blinkOn) {
+      display.drawBitmap(SCREEN_WIDTH - 10, SCREEN_HEIGHT - 18, droplet_bmp, 8, 8, SSD1306_WHITE);
+      display.fillRect(SCREEN_WIDTH - 26, SCREEN_HEIGHT - 8, 26, 8, SSD1306_WHITE);
+      display.setTextColor(SSD1306_BLACK);
+      display.setCursor(SCREEN_WIDTH - 24, SCREEN_HEIGHT - 8);
+      display.print(F("RISK"));
+      display.setTextColor(SSD1306_WHITE);
+    }
+  }
+
+  display.display();
+}
