@@ -1,0 +1,592 @@
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_AHTX0.h>
+#include <Adafruit_BMP280.h>
+#include <Adafruit_Sensor.h>
+#include <EEPROM.h>
+#include <Wire.h>
+#include "RTClib.h"
+#include <math.h>
+#include <avr/pgmspace.h>
+
+// -------------------- Display --------------------
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+// Sleep timing
+const unsigned long SLEEP_TIMEOUT_MS     = 30000UL; // 30s to sleep
+bool displaySleeping = false;
+
+// -------------------- Sensors --------------------
+Adafruit_AHTX0 aht20;
+Adafruit_BMP280 bmp280; // I2C address usually 0x76 or 0x77
+bool ahtOK = false;
+bool bmpOK = false;
+
+// -------------------- RTC (optional) --------------------
+RTC_DS3231 rtc;
+bool rtcPresent = false;
+unsigned long lastRTCSync = 0;
+
+// -------------------- Buttons --------------------
+#define BTN1 3
+#define BTN2 4
+#define BTN3 5
+unsigned long btn1PressTime = 0;
+bool btn1Held = false;
+
+// -------------------- Status RGB LED (common cathode) --------------------
+#define LED_R 6
+#define LED_G 7
+#define LED_B 8
+inline void ledOff()   { digitalWrite(LED_R, LOW);  digitalWrite(LED_G, LOW);  digitalWrite(LED_B, LOW);  }
+inline void ledRed()   { digitalWrite(LED_R, HIGH); digitalWrite(LED_G, LOW);  digitalWrite(LED_B, LOW);  }
+inline void ledGreen() { digitalWrite(LED_R, LOW);  digitalWrite(LED_G, HIGH); digitalWrite(LED_B, LOW);  }
+inline void ledYellow(){ digitalWrite(LED_R, HIGH); digitalWrite(LED_G, HIGH); digitalWrite(LED_B, LOW);  }
+
+// -------------------- Battery sense + Power RGB LED2 (common cathode) ----
+#define BATT_SENSE_PIN A0
+#define LED2_R 9
+#define LED2_G 10
+#define LED2_B 11
+const float BATT_R1 = 100000.0f; // 100k from 9V+ to A0
+const float BATT_R2 =  33000.0f; // 33k from A0 to GND
+const float VBATT_GOOD    = 8.0f;
+const float VBATT_OKAY    = 7.0f;
+const float VBATT_LOW     = 6.5f;  // blink below this (awake)
+const float VBATT_PRESENT = 0.5f;  // treat <0.5V as "no battery"
+inline void pwrLedOff()    { digitalWrite(LED2_R, LOW);  digitalWrite(LED2_G, LOW);  digitalWrite(LED2_B, LOW);  }
+inline void pwrLedRed()    { digitalWrite(LED2_R, HIGH); digitalWrite(LED2_G, LOW);  digitalWrite(LED2_B, LOW);  }
+inline void pwrLedYellow() { digitalWrite(LED2_R, HIGH); digitalWrite(LED2_G, HIGH); digitalWrite(LED2_B, LOW);  }
+inline void pwrLedGreen()  { digitalWrite(LED2_R, LOW);  digitalWrite(LED2_G, HIGH); digitalWrite(LED2_B, LOW);  }
+
+// Sleep blip patterns
+const unsigned long STATUS_BLIP_PERIOD_MS = 5000UL; // every 5s short blip
+const unsigned long STATUS_BLIP_ON_MS     = 120UL;
+const unsigned long PWR_BLIP_PERIOD_MS    = 2000UL; // every 2s short blip
+const unsigned long PWR_BLIP_ON_MS        = 120UL;
+
+// -------------------- EEPROM --------------------
+#define EEPROM_ADDR_UNIT         0              // bool (C/F)
+#define EEPROM_ADDR_TIME         10             // packed time fields
+#define EEPROM_ADDR_SEALEVEL     20             // float (hPa)
+#define EEPROM_ADDR_SETUP_FLAG   40             // byte flag for first-boot wizard
+const uint8_t SETUP_MAGIC = 0xA5;
+
+// -------------------- Time & Date --------------------
+int hour_ = 12, minute_ = 0, second_ = 0, day_ = 1, month_ = 1, year_ = 2025;
+unsigned long lastMillis = 0;
+unsigned long secondCounter = 0;
+
+// -------------------- Settings / Modes --------------------
+bool isCelsius = true;
+float seaLevelPressure_hPa = 1013.25f;     // configurable (min/max clamp 800..1100)
+unsigned long lastButtonPress = 0;
+
+enum Mode : uint8_t { NORMAL, SET_HOUR, SET_MINUTE, SET_DAY, SET_MONTH, SET_YEAR, SET_SEALEVEL, SET_ALT_CAL };
+Mode mode = NORMAL;
+
+uint8_t displayMode = 0;           // 0 = Temperature screen, 1 = Extra info (auto-rotate)
+uint8_t extraDisplayMode = 0;      // 0=Humidity, 1=DewPt, 2=Pressure, 3=Altitude
+unsigned long lastToggleTime = 0;
+
+// Altitude calibration (user-entered)
+float knownAltitude_m = 100.0f; // default; used in SET_ALT_CAL to compute sea-level pressure
+
+// Small re-usable text buffer
+static char buf[32];
+
+// -------------------- Bitmaps (PROGMEM) --------------------
+// Condensation droplet (8x8)
+static const uint8_t PROGMEM droplet_bmp[8] = {
+  0b00011000,
+  0b00011000,
+  0b00111100,
+  0b01111110,
+  0b01111110,
+  0b00111100,
+  0b00011000,
+  0b00000000
+};
+
+// Simple 32x32 "bot head" logo for the splash (monochrome)
+static const uint8_t PROGMEM chatgpt_bot_32x32[] = {
+  // 32x32 bitmap, 4 bytes per row × 32 rows = 128 bytes
+  // A cute robot-ish face: rounded square, eyes, antenna.
+  0x00,0x3F,0xFC,0x00,  0x00,0x60,0x06,0x00,
+  0x00,0xC0,0x03,0x00,  0x01,0x80,0x01,0x80,
+  0x03,0x00,0x00,0xC0,  0x06,0x00,0x00,0x60,
+  0x0C,0x00,0x00,0x30,  0x18,0x00,0x00,0x18,
+  0x30,0x7F,0xFE,0x0C,  0x20,0x80,0x01,0x04,
+  0x41,0x00,0x00,0x82,  0x40,0x00,0x00,0x02,
+  0x40,0x1C,0x38,0x02,  0x40,0x1C,0x38,0x02,
+  0x40,0x00,0x00,0x02,  0x41,0x00,0x00,0x82,
+  0x20,0x80,0x01,0x04,  0x30,0x7F,0xFE,0x0C,
+  0x18,0x00,0x00,0x18,  0x0C,0x00,0x00,0x30,
+  0x06,0x00,0x00,0x60,  0x03,0x00,0x00,0xC0,
+  0x01,0x80,0x01,0x80,  0x00,0xC0,0x03,0x00,
+  0x00,0x60,0x06,0x00,  0x00,0x3F,0xFC,0x00,
+  0x00,0x06,0x00,0x00,  0x00,0x06,0x00,0x00,
+  0x00,0x06,0x00,0x00,  0x00,0x1F,0x80,0x00,
+  0x00,0x19,0x80,0x00,  0x00,0x11,0x80,0x00,
+  0x00,0x19,0x80,0x00,  0x00,0x1F,0x80,0x00,
+  0x00,0x00,0x00,0x00,  0x00,0xFF,0xFF,0x00,
+  0x00,0x80,0x01,0x00,  0x00,0x80,0x01,0x00,
+  0x00,0x80,0x01,0x00,  0x00,0xFF,0xFF,0x00
+};
+
+// -------------------- Utilities --------------------
+int getDaysInMonth(int m, int y) {
+  if (m == 2) return ((y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)) ? 29 : 28;
+  if (m == 4 || m == 6 || m == 9 || m == 11) return 30;
+  return 31;
+}
+void normalizeDate() {
+  if (month_ < 1) { month_ = 12; year_--; }
+  if (month_ > 12) { month_ = 1; year_++; }
+  int dim = getDaysInMonth(month_, year_);
+  if (day_ < 1) {
+    month_--; if (month_ < 1) { month_ = 12; year_--; }
+    day_ = getDaysInMonth(month_, year_);
+  }
+  if (day_ > dim) {
+    day_ = 1; month_++; if (month_ > 12) { month_ = 1; year_++; }
+  }
+}
+inline void nextDay() { day_++; normalizeDate(); }
+
+void saveTimeToEEPROM() {
+  EEPROM.put(EEPROM_ADDR_TIME,      hour_);
+  EEPROM.put(EEPROM_ADDR_TIME + 2,  minute_);
+  EEPROM.put(EEPROM_ADDR_TIME + 4,  second_);
+  EEPROM.put(EEPROM_ADDR_TIME + 6,  day_);
+  EEPROM.put(EEPROM_ADDR_TIME + 8,  month_);
+  EEPROM.put(EEPROM_ADDR_TIME + 10, year_);
+}
+void loadTimeFromEEPROM() {
+  EEPROM.get(EEPROM_ADDR_TIME,      hour_);
+  EEPROM.get(EEPROM_ADDR_TIME + 2,  minute_);
+  EEPROM.get(EEPROM_ADDR_TIME + 4,  second_);
+  EEPROM.get(EEPROM_ADDR_TIME + 6,  day_);
+  EEPROM.get(EEPROM_ADDR_TIME + 8,  month_);
+  EEPROM.get(EEPROM_ADDR_TIME + 10, year_);
+  if (hour_ < 0 || hour_ > 23) {
+    hour_ = 12; minute_ = 0; second_ = 0; day_ = 1; month_ = 1; year_ = 2025;
+  }
+}
+inline void saveSeaLevelToEEPROM() { EEPROM.put(EEPROM_ADDR_SEALEVEL, seaLevelPressure_hPa); }
+void loadSeaLevelFromEEPROM() {
+  EEPROM.get(EEPROM_ADDR_SEALEVEL, seaLevelPressure_hPa);
+  if (!(seaLevelPressure_hPa > 800.0f && seaLevelPressure_hPa < 1100.0f)) seaLevelPressure_hPa = 1013.25f;
+}
+
+// Magnus-Tetens dew point (°C)
+float calcDewPoint(float tempC, float humidity) {
+  const float a = 17.27f, b = 237.7f;
+  float alpha = ((a * tempC) / (b + tempC)) + logf(humidity / 100.0f);
+  return (b * alpha) / (a - alpha);
+}
+// Altitude given pressure (hPa) and sea-level pressure (hPa)
+float calcAltitude(float pressure_hPa, float seaLevel_hPa) {
+  return 44330.0f * (1.0f - powf(pressure_hPa / seaLevel_hPa, 0.1903f));
+}
+// Given pressure & known altitude, compute sea-level pressure (hPa)
+float calcSeaLevelFromAltitude(float pressure_hPa, float altitude_m) {
+  float ratio = 1.0f - (altitude_m / 44330.0f);
+  return pressure_hPa / powf(ratio, 5.255f);
+}
+
+// Status LED steady color (awake)
+void updateStatusLEDSteady() {
+  if (!ahtOK || !bmpOK)      { ledRed();    return; } // critical sensor missing
+  if (!rtcPresent)           { ledYellow(); return; } // main sensors OK, RTC absent
+  ledGreen();                                           // all good
+}
+
+// --- Battery sensing ---
+float readBatteryVoltage() {
+  uint16_t acc = 0;
+  const uint8_t N = 8;
+  for (uint8_t i = 0; i < N; i++) acc += analogRead(BATT_SENSE_PIN);
+  float adc = acc / float(N);
+  float vA0 = adc * (5.0f / 1023.0f);                        // A0 voltage
+  float vBatt = vA0 * ((BATT_R1 + BATT_R2) / BATT_R2);       // back-calc battery
+  return vBatt;
+}
+
+// Display power control (fade)
+inline void displaySleepNow() {
+  // Fade down brightness (max 255 to min 0)
+  for (int b = 255; b >= 0; b -= 15) {
+    display.ssd1306_command(SSD1306_SETCONTRAST);
+    display.ssd1306_command(b);
+    delay(40);
+  }
+  display.ssd1306_command(SSD1306_DISPLAYOFF);
+  displaySleeping = true;
+}
+inline void displayWakeNow() {
+  display.ssd1306_command(SSD1306_DISPLAYON);
+  display.ssd1306_command(SSD1306_SETCONTRAST);
+  display.ssd1306_command(255); // full brightness
+  displaySleeping = false;
+}
+
+// -------------------- Setup --------------------
+void setup() {
+  pinMode(BTN1, INPUT_PULLUP);
+  pinMode(BTN2, INPUT_PULLUP);
+  pinMode(BTN3, INPUT_PULLUP);
+
+  pinMode(LED_R, OUTPUT);
+  pinMode(LED_G, OUTPUT);
+  pinMode(LED_B, OUTPUT);
+  ledOff();
+
+  pinMode(BATT_SENSE_PIN, INPUT);
+  pinMode(LED2_R, OUTPUT);
+  pinMode(LED2_G, OUTPUT);
+  pinMode(LED2_B, OUTPUT);
+  pwrLedOff();
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { ledRed(); for(;;); }
+
+  // --- Splash screen with logo ---
+  display.clearDisplay();
+  // Center the 32x32 bot at (48,8), then caption below
+  display.drawBitmap(48, 8, chatgpt_bot_32x32, 32, 32, SSD1306_WHITE);
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(16, 44);
+  display.print(F("Code done with ChatGPT"));
+  display.display();
+  delay(2000);
+  display.clearDisplay(); display.display();
+
+  // Sensors
+  ahtOK = aht20.begin();
+  bmpOK = bmp280.begin(0x76) || bmp280.begin(0x77); // try both addresses
+
+  // Load persisted settings
+  isCelsius = EEPROM.read(EEPROM_ADDR_UNIT);
+  loadTimeFromEEPROM();
+  loadSeaLevelFromEEPROM();
+
+  // RTC
+  Wire.begin();
+  if (rtc.begin()) {
+    rtcPresent = true;
+    if (rtc.lostPower()) {
+      rtc.adjust(DateTime(year_, month_, day_, hour_, minute_, second_));
+    } else {
+      DateTime now = rtc.now();
+      hour_  = now.hour();
+      minute_= now.minute();
+      second_= now.second();
+      day_   = now.day();
+      month_ = now.month();
+      year_  = now.year();
+    }
+  }
+
+  lastMillis = millis();
+  lastRTCSync = millis();
+
+  // First-boot wizard
+  const uint8_t flag = EEPROM.read(EEPROM_ADDR_SETUP_FLAG);
+  if (flag != SETUP_MAGIC) {
+    mode = SET_ALT_CAL;
+    knownAltitude_m = 100.0f;
+    lastButtonPress = millis();
+  }
+
+  updateStatusLEDSteady();
+}
+
+// -------------------- Main Loop --------------------
+void loop() {
+  const unsigned long nowMs = millis();
+
+  // Accurate millis-driven clock (overflow-safe)
+  unsigned long elapsed = nowMs - lastMillis;
+  lastMillis = nowMs;
+  secondCounter += elapsed;
+  if (secondCounter >= 1000) {
+    int secondsPassed = secondCounter / 1000;
+    secondCounter %= 1000;
+    while (secondsPassed--) tickSecond();
+  }
+
+  // Hourly RTC -> millis resync
+  if (rtcPresent && (nowMs - lastRTCSync >= 3600000UL)) {
+    DateTime now = rtc.now();
+    hour_  = now.hour();
+    minute_= now.minute();
+    second_= now.second();
+    day_   = now.day();
+    month_ = now.month();
+    year_  = now.year();
+    lastRTCSync = nowMs;
+  }
+
+  // Auto-rotate extra info screens (only when awake)
+  if (!displaySleeping && mode == NORMAL && displayMode == 1) {
+    if (nowMs - lastToggleTime >= 5000UL) {
+      extraDisplayMode = (extraDisplayMode + 1) % 4;
+      lastToggleTime = nowMs;
+    }
+  }
+
+  // Enter sleep after inactivity (NORMAL mode only)
+  if (!displaySleeping && mode == NORMAL && (nowMs - lastButtonPress > SLEEP_TIMEOUT_MS)) {
+    displaySleepNow();
+    ledOff();       // turn off steady status LED; we'll do blips in sleep
+    pwrLedOff();    // power LED also handled via sleep blip below
+  }
+
+  readButtons(); // handles wake-on-press & long-press BTN1 too
+
+  // ---------- Status LED behavior ----------
+  static unsigned long lastStatusBlink = 0;
+  static bool statusBlipOn = false;
+  if (!displaySleeping) {
+    updateStatusLEDSteady(); // Awake: steady color
+  } else {
+    // Sleeping: short blip in the right color every few seconds
+    if (nowMs - lastStatusBlink >= STATUS_BLIP_PERIOD_MS) {
+      lastStatusBlink = nowMs;
+      statusBlipOn = true;
+      if (!ahtOK || !bmpOK)      ledRed();
+      else if (!rtcPresent)      ledYellow();
+      else                       ledGreen();
+    }
+    if (statusBlipOn && (nowMs - lastStatusBlink >= STATUS_BLIP_ON_MS)) {
+      statusBlipOn = false;
+      ledOff();
+    }
+  }
+
+  // ---------- Power LED behavior ----------
+  static unsigned long lastPwrTick = 0;
+  static bool pwrBlinkPhase = false;
+  if (nowMs - lastPwrTick >= (displaySleeping ? PWR_BLIP_PERIOD_MS : 1000UL)) {
+    lastPwrTick = nowMs;
+    pwrBlinkPhase = !pwrBlinkPhase; // used for awake critical blink and to mark start of sleep blip window
+
+    float vBatt = readBatteryVoltage();
+
+    if (vBatt < VBATT_PRESENT) {
+      pwrLedOff();                               // no battery (USB-only)
+    } else if (!displaySleeping) {
+      // Awake behavior
+      if (vBatt < VBATT_LOW) {                   // critical: 1 Hz blink red
+        if (pwrBlinkPhase) pwrLedRed(); else pwrLedOff();
+      } else if (vBatt < VBATT_OKAY) {
+        pwrLedRed();
+      } else if (vBatt < VBATT_GOOD) {
+        pwrLedYellow();
+      } else {
+        pwrLedGreen();
+      }
+    } else {
+      // Sleeping: short blip every 2s (color by band)
+      if (vBatt < VBATT_LOW)      pwrLedRed();
+      else if (vBatt < VBATT_OKAY)pwrLedRed();
+      else if (vBatt < VBATT_GOOD)pwrLedYellow();
+      else                        pwrLedGreen();
+    }
+  }
+  // Ensure sleep blip turns off after ON_MS
+  if (displaySleeping) {
+    static unsigned long pwrOnStart = 0;
+    static bool pwrOnActive = false;
+    if ((nowMs - lastPwrTick) < 5UL && !pwrOnActive) {
+      if (digitalRead(LED2_R) || digitalRead(LED2_G) || digitalRead(LED2_B)) {
+        pwrOnActive = true; pwrOnStart = nowMs;
+      }
+    }
+    if (pwrOnActive && (nowMs - pwrOnStart >= PWR_BLIP_ON_MS)) {
+      pwrOnActive = false;
+      pwrLedOff();
+    }
+  }
+
+  // Draw only when awake
+  if (!displaySleeping) drawDisplay();
+}
+
+// Tick one second
+void tickSecond() {
+  if (rtcPresent) {
+    DateTime now = rtc.now();
+    hour_  = now.hour();
+    minute_= now.minute();
+    second_= now.second();
+    day_   = now.day();
+    month_ = now.month();
+    year_  = now.year();
+  } else {
+    second_++;
+    if (second_ >= 60) { second_ = 0; minute_++; }
+    if (minute_ >= 60) { minute_ = 0; hour_++; }
+    if (hour_ >= 24)   { hour_ = 0; nextDay(); }
+  }
+}
+
+// -------------------- Buttons --------------------
+void adjustValue(int delta) {
+  switch (mode) {
+    case SET_HOUR:      hour_   = (hour_ + delta + 24) % 24; break;
+    case SET_MINUTE:    minute_ = (minute_ + delta + 60) % 60; break;
+    case SET_DAY:       day_   += delta; normalizeDate(); break;
+    case SET_MONTH:     month_ += delta; normalizeDate(); break;
+    case SET_YEAR:      year_  += delta; normalizeDate(); break;
+    case SET_SEALEVEL:  seaLevelPressure_hPa += delta * 0.1f;
+                        if (seaLevelPressure_hPa < 800.0f) seaLevelPressure_hPa = 800.0f;
+                        if (seaLevelPressure_hPa > 1100.0f) seaLevelPressure_hPa = 1100.0f;
+                        break;
+    case SET_ALT_CAL:   knownAltitude_m += delta * 1.0f;
+                        if (knownAltitude_m < -500.0f) knownAltitude_m = -500.0f;
+                        if (knownAltitude_m > 9000.0f) knownAltitude_m = 9000.0f;
+                        break;
+    default: break;
+  }
+}
+
+void readButtons() {
+  // Wake-on-any-press without triggering actions
+  if (displaySleeping) {
+    if (digitalRead(BTN1)==LOW || digitalRead(BTN2)==LOW || digitalRead(BTN3)==LOW) {
+      displayWakeNow();
+      lastButtonPress = millis();
+      // do not act on this press; user can press again to interact
+      return;
+    }
+  }
+
+  // BTN1 with long-press toggle
+  if (digitalRead(BTN1) == LOW) {
+    if (btn1PressTime == 0) btn1PressTime = millis();
+    if (!btn1Held && (millis() - btn1PressTime >= 2000UL)) {
+      // Long press: toggle sleep/wake
+      btn1Held = true;
+      if (displaySleeping) {
+        displayWakeNow();
+      } else {
+        displaySleepNow();
+        ledOff();
+        pwrLedOff();
+      }
+      lastButtonPress = millis();
+    }
+  } else {
+    if (btn1PressTime != 0 && !btn1Held) {
+      // Short press: original BTN1 behavior
+      lastButtonPress = millis();
+      if (mode == NORMAL) {
+        displayMode = (displayMode + 1) % 2; // switch Temp <-> Extra cycle
+      } else {
+        if (mode == SET_YEAR)            mode = SET_SEALEVEL;
+        else if (mode == SET_SEALEVEL)   mode = SET_ALT_CAL;
+        else if (mode == SET_ALT_CAL) {
+          if (bmpOK) {
+            float pressure = bmp280.readPressure() / 100.0f;
+            seaLevelPressure_hPa = calcSeaLevelFromAltitude(pressure, knownAltitude_m);
+            if (seaLevelPressure_hPa < 800.0f) seaLevelPressure_hPa = 800.0f;
+            if (seaLevelPressure_hPa > 1100.0f) seaLevelPressure_hPa = 1100.0f;
+            saveSeaLevelToEEPROM();
+          }
+          EEPROM.write(EEPROM_ADDR_SETUP_FLAG, SETUP_MAGIC); // wizard complete
+          saveTimeToEEPROM();
+          if (rtcPresent) rtc.adjust(DateTime(year_, month_, day_, hour_, minute_, second_));
+          mode = NORMAL;
+        }
+        else {
+          mode = static_cast<Mode>(mode + 1);
+        }
+      }
+    }
+    // Reset long-press tracking
+    btn1PressTime = 0;
+    btn1Held = false;
+  }
+
+  // BTN2
+  if (digitalRead(BTN2) == LOW) {
+    delay(200);
+    lastButtonPress = millis();
+    if (mode == NORMAL) {
+      isCelsius = !isCelsius;
+      EEPROM.write(EEPROM_ADDR_UNIT, isCelsius);
+    } else {
+      adjustValue(+1);
+      if (mode == SET_SEALEVEL) saveSeaLevelToEEPROM();
+    }
+  }
+
+  // BTN3
+  if (digitalRead(BTN3) == LOW) {
+    delay(200);
+    lastButtonPress = millis();
+    if (mode != NORMAL) {
+      adjustValue(-1);
+      if (mode == SET_SEALEVEL) saveSeaLevelToEEPROM();
+    } else {
+      mode = SET_HOUR;
+    }
+  }
+}
+
+// -------------------- Display --------------------
+void drawDisplay() {
+  display.clearDisplay();
+
+  // --- Time ---
+  snprintf(buf, sizeof(buf), "%02d:%02d:%02d", hour_, minute_, second_);
+  display.setTextSize(2);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.print(buf);
+
+  // --- Date ---
+  snprintf(buf, sizeof(buf), "%02d/%02d/%04d", day_, month_, year_);
+  display.setTextSize(1);
+  display.setCursor(0, 20);
+  display.print(buf);
+
+  // Sensor reads
+  float tC = NAN, hum = NAN, pressure_hPa = NAN;
+
+  if (ahtOK) {
+    sensors_event_t humEvent, tempEvent;
+    aht20.getEvent(&humEvent, &tempEvent);
+    tC  = tempEvent.temperature;
+    hum = humEvent.relative_humidity;
+  }
+  if (bmpOK) {
+    pressure_hPa = bmp280.readPressure() / 100.0f;
+  }
+
+  // Derived values
+  bool showDrop = false;
+  float dpC = (!isnan(tC) && !isnan(hum)) ? calcDewPoint(tC, hum) : NAN;
+
+  // --- Main content ---
+  display.setCursor(0, 35);
+  if (displayMode == 0) {
+    if (!isnan(tC)) {
+      float tDisp = isCelsius ? tC : (tC * 9.0f / 5.0f + 32.0f);
+      snprintf(buf, sizeof(buf), "Temp: %.1f %c", tDisp, isCelsius ? 'C' : 'F');
+      display.print(buf);
+    } else {
+      display.print(F("Temp: N/A"));
+    }
+  } else {
+    if (extraDisplayMode == 0) {
+      if (!isnan(hum)) { snprintf(buf, sizeof(buf), "Humidity: %.1f%%", hum); display.print(buf); }
+      else display.print(F("Humidity: N/A"));
+    } else if (extraDisplayMode == 1) {
+      if (!isnan(dpC) && !isnan(tC)) {
+        float dpDisp = isCelsius ? dpC : (dpC * 9.0f / 5.0f + 32.0f);
+        snprintf(buf, sizeof(buf), "Dew Pt: %.1f %c", dpDisp, isCelsius ? 'C' : 'F
